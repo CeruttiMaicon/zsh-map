@@ -12,6 +12,7 @@ O ZshMap oferece:
 - Menus e confirmações no terminal
 - Barras de progresso em operações longas
 - Navegação por teclado
+- **Fluxos em etapas:** telas Whiptail encadeadas guiam a escolha do projeto, do atalho e das confirmações, para não teres de decorar comandos longos no dia a dia.
 
 ## 🚀 Como usar
 
@@ -70,9 +71,12 @@ shell:
 ### Instalação de programas
 - `install.programs_dir` é **sempre uma lista** em `~/.zshmap.yml`; requer **yq**. O menu só aparece se alguma pasta listada existir e tiver `.sh`.
 
-### Atalhos
+### Atalhos dinâmicos e integração com o Zsh
+- **Criação dinâmica por projeto:** cada repositório pode declarar atalhos no seu `zshmap.yml` (na raiz); o ZshMap descobre projetos a partir de `~/.zshmap.yml` e monta menus e ações em função do que está definido — não precisas de editar o script para cada novo projeto ou comando.
 - **Por projeto:** `zshmap.yml` na raiz do repo; `workerboss.yml` ainda é aceite se o novo nome ainda não existir.
 - **Global:** `~/.zshmap.yml` — `projects`, `install`, `shell.extras_source`.
+- **Whiptail como “assistente”:** as integrações de telas (menus, listas, caixas de mensagem) encaixam-se no fluxo de execução dos atalhos — escolhes o contexto no menu e segues as etapas até correr o que precisas, com menos erros e menos cópia de comandos.
+- **Aliases no Zsh:** ao gerares **`~/.zprofile-auto`** e o carregares no teu shell, os atalhos ficam também expostos como **aliases Zsh**, para invocares os mesmos fluxos (ou comandos gerados) direto na linha de comandos, além do menu Whiptail.
 
 ### Git, Zsh, sistema
 - Configuração Git local, dependências Zsh, informações do sistema (conforme opções do menu).
