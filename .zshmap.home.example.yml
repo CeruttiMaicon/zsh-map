@@ -1,0 +1,21 @@
+# Exemplo de configuração global — copiar para ~/.zshmap.yml na home.
+# Projetos: cada subpasta de projects.dir pode ter um workerboss.yml.
+# ignore_dirs: pastas (basename) ignoradas na leitura.
+
+projects:
+  dir: "~/Projects"
+  ignore_dirs:
+    - "srp-deploy"
+
+# Instalação de programas: programs_dir é **sempre uma lista** (uma ou mais pastas; cada uma com SO + *.sh).
+# Requer yq no PATH para o ZshMap ler esta chave.
+install:
+  programs_dir:
+    - "~/Projects/substitui-pelo-repo/programs"
+    - "~/Projects/substitui-pelo-repo/outros-programs"
+
+# shell no mesmo nível que projects. extras_source: lista (ordem = ordem de source).
+shell:
+  extras_source:
+    - "~/Projects/substitui-pelo-repo/.workerboss-extras.zsh"
+    # - "~/Projects/outro-repo/.outro.zsh"
