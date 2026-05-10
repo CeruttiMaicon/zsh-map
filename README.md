@@ -1,6 +1,6 @@
 # ZshMap
 
-Ferramenta com menu **Whiptail** que lê **`workerboss.yml`** por projeto e **`~/.zshmap.yml`** na home, gera **`~/.zprofile-auto`** e integra extras Zsh, Git, instalação opcional de programas (pastas configuradas em lista) e mais.
+Ferramenta com menu **Whiptail** que lê **`zshmap.yml`** na raiz de cada projeto (com fallback legado para `workerboss.yml`) e **`~/.zshmap.yml`** na home, gera **`~/.zprofile-auto`** e integra extras Zsh, Git, instalação opcional de programas (pastas configuradas em lista) e mais.
 
 Repositório: **`zsh-map`** (clone típico `~/Projects/zsh-map`).
 
@@ -58,7 +58,7 @@ install:
 
 shell:
   extras_source:
-    - "~/Projects/substitui-pelo-repo/.workerboss-extras.zsh"
+    - "~/Projects/substitui-pelo-repo/.zshmap-extras.zsh"
 ```
 
 3. **Extras Zsh:** ficheiros ocultos `.zsh` listados em `shell.extras_source` (lista).
@@ -71,7 +71,7 @@ shell:
 - `install.programs_dir` é **sempre uma lista** em `~/.zshmap.yml`; requer **yq**. O menu só aparece se alguma pasta listada existir e tiver `.sh`.
 
 ### Atalhos
-- **Por projeto:** `workerboss.yml` na raiz do repo (nome do ficheiro mantido por compatibilidade).
+- **Por projeto:** `zshmap.yml` na raiz do repo; `workerboss.yml` ainda é aceite se o novo nome ainda não existir.
 - **Global:** `~/.zshmap.yml` — `projects`, `install`, `shell.extras_source`.
 
 ### Git, Zsh, sistema

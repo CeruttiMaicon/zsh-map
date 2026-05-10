@@ -1,5 +1,5 @@
 # Exemplo de configuração global — copiar para ~/.zshmap.yml na home.
-# Projetos: cada subpasta de projects.dir pode ter um workerboss.yml.
+# Projetos: cada subpasta de projects.dir pode ter um zshmap.yml (atalhos); workerboss.yml é aceite como legado.
 # ignore_dirs: pastas (basename) ignoradas na leitura.
 
 projects:
@@ -12,10 +12,10 @@ projects:
 install:
   programs_dir:
     - "~/Projects/substitui-pelo-repo/programs"
-    - "~/Projects/substitui-pelo-repo/outros-programs"
+    # - "~/Projects/substitui-pelo-repo/outros-programs"
 
 # shell no mesmo nível que projects. extras_source: lista (ordem = ordem de source).
 shell:
   extras_source:
-    - "~/Projects/substitui-pelo-repo/.workerboss-extras.zsh"
+    - "~/Projects/substitui-pelo-repo/.zshmap-extras.zsh"
     # - "~/Projects/outro-repo/.outro.zsh"

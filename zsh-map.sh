@@ -371,38 +371,65 @@ validate_yaml_file() {
     return 0
 }
 
-# Lista workerboss.yml em cada projeto sob projects.dir, excluindo pastas em projects.ignore_dirs
-# do arquivo ~/.zshmap.yml. Saída null-terminated (-print0).
+# Caminho do YAML de atalhos dentro da pasta do repositório (prefere zshmap.yml; aceita workerboss.yml legado).
+_zshmap_resolve_yaml_in_project_dir() {
+    local d="${1%/}"
+    [ -n "$d" ] || return 1
+    if [ -f "$d/zshmap.yml" ]; then
+        printf '%s\n' "$d/zshmap.yml"
+        return 0
+    fi
+    if [ -f "$d/workerboss.yml" ]; then
+        printf '%s\n' "$d/workerboss.yml"
+        return 0
+    fi
+    return 1
+}
+
+# Lista zshmap.yml (ou workerboss.yml legado) por projeto sob projects.dir, excluindo pastas em projects.ignore_dirs
+# do arquivo ~/.zshmap.yml. Uma entrada por pasta de repositório; saída null-terminated (-print0).
 find_zshmap_project_yamls() {
     local projects_dir="$1"
     local main_config="${2:-$(_zshmap_home_config_path)}"
+    local shopt_restore
+    shopt_restore=$(shopt -p nullglob 2>/dev/null || true)
+    shopt -s nullglob
 
-    local -a find_args=(
-        "$projects_dir"
-        -maxdepth 2
-        -type f
-        -name "workerboss.yml"
-    )
-
-    if [ -f "$main_config" ]; then
-        local len
-        len=$(yq '.projects.ignore_dirs // [] | length' "$main_config" 2>/dev/null)
-        if [ -n "$len" ] && [ "$len" != "null" ] && [ "$len" != "0" ]; then
-            local idx=0
-            while [ "$idx" -lt "$len" ]; do
-                local ign
-                ign=$(yq -r ".projects.ignore_dirs[$idx] // \"\"" "$main_config" 2>/dev/null)
-                if [ -n "$ign" ] && [ "$ign" != "null" ]; then
-                    ign="${ign%/}"
-                    ign="${ign##*/}"
-                    find_args+=( ! -path "$projects_dir/$ign/*" )
-                fi
-                idx=$((idx + 1))
-            done
+    local d project_dir_name yaml_path skip len idx ign
+    for d in "$projects_dir"/*/; do
+        [ -d "$d" ] || continue
+        project_dir_name=$(basename "${d%/}")
+        skip=false
+        if [ -f "$main_config" ]; then
+            len=$(yq '.projects.ignore_dirs // [] | length' "$main_config" 2>/dev/null)
+            if [ -n "$len" ] && [ "$len" != "null" ] && [ "$len" != "0" ]; then
+                idx=0
+                while [ "$idx" -lt "$len" ]; do
+                    ign=$(yq -r ".projects.ignore_dirs[$idx] // \"\"" "$main_config" 2>/dev/null)
+                    if [ -n "$ign" ] && [ "$ign" != "null" ]; then
+                        ign="${ign%/}"
+                        ign="${ign##*/}"
+                        if [ "$project_dir_name" = "$ign" ]; then
+                            skip=true
+                            break
+                        fi
+                    fi
+                    idx=$((idx + 1))
+                done
+            fi
         fi
-    fi
+        [ "$skip" = true ] && continue
 
-    find "${find_args[@]}" -print0 2>/dev/null
+        yaml_path=""
+        yaml_path=$(_zshmap_resolve_yaml_in_project_dir "$d") || true
+        if [ -n "$yaml_path" ]; then
+            printf '%s\0' "$yaml_path"
+        fi
+    done
+
+    if [ -n "$shopt_restore" ]; then
+        eval "$shopt_restore" 2>/dev/null || true
+    fi
 }
 
 # Função para detectar projetos dinamicamente
@@ -430,7 +457,7 @@ detect_projects() {
         return 1
     fi
     
-    # Buscar por arquivos workerboss.yml em subdiretórios
+    # Buscar por zshmap.yml (ou workerboss.yml legado) em cada pasta de projeto
     while IFS= read -r -d '' project_path; do
         local project_dir=$(basename "$(dirname "$project_path")")
         
@@ -454,7 +481,7 @@ detect_projects() {
     
     if [ ${#projects[@]} -eq 0 ]; then
         whiptail --title "❌ Nenhum projeto encontrado" \
-                 --msgbox "Nenhum projeto com arquivo workerboss.yml encontrado em $projects_dir!\n\nAdicione arquivos workerboss.yml aos seus projetos." \
+                 --msgbox "Nenhum projeto com zshmap.yml (ou workerboss.yml legado) encontrado em $projects_dir!\n\nAdicione zshmap.yml na raiz de cada projeto." \
                  10 60
         return 1
     fi
@@ -500,7 +527,7 @@ detect_projects() {
     fi
 }
 
-# Função para obter o caminho do arquivo workerboss.yml de um projeto
+# Função para obter o caminho do zshmap.yml (ou workerboss.yml legado) de um projeto
 get_project_yaml_path() {
     local project_name="$1"
     local projects_dir=""
@@ -516,15 +543,10 @@ get_project_yaml_path() {
         projects_dir="$HOME/Projects"
     fi
     
-    # Buscar pelo arquivo workerboss.yml do projeto específico
-    local yaml_path="$projects_dir/$project_name/workerboss.yml"
-    
-    if [ -f "$yaml_path" ]; then
-        echo "$yaml_path"
-        return 0
-    else
-        return 1
-    fi
+    local yaml_path=""
+    yaml_path=$(_zshmap_resolve_yaml_in_project_dir "$projects_dir/$project_name") || return 1
+    printf '%s\n' "$yaml_path"
+    return 0
 }
 
 # Função para verificar atalhos duplicados entre projetos (informativa)
@@ -617,7 +639,14 @@ validate_duplicate_shortcuts() {
 
 # Função para listar projetos do arquivo YAML
 list_yaml_projects() {
-    local yaml_file="workerboss.yml"
+    local yaml_file=""
+    if [ -f "./zshmap.yml" ]; then
+        yaml_file="./zshmap.yml"
+    elif [ -f "./workerboss.yml" ]; then
+        yaml_file="./workerboss.yml"
+    else
+        yaml_file="./zshmap.yml"
+    fi
     local projects=()
     local count=0
     
@@ -680,7 +709,7 @@ list_project_shortcuts() {
     yaml_file=$(get_project_yaml_path "$project_name")
     if [ $? -ne 0 ] || [ -z "$yaml_file" ]; then
         whiptail --title "❌ Arquivo não encontrado" \
-                 --msgbox "Arquivo workerboss.yml não encontrado para o projeto $project_name!" \
+                 --msgbox "Arquivo zshmap.yml (ou workerboss.yml legado) não encontrado para o projeto $project_name!" \
                  10 60
         return 1
     fi
@@ -752,7 +781,7 @@ execute_shortcut() {
     local yaml_file=$(get_project_yaml_path "$project_name")
     if [ $? -ne 0 ] || [ -z "$yaml_file" ]; then
         whiptail --title "❌ Erro" \
-                 --msgbox "Arquivo workerboss.yml não encontrado para o projeto $project_name!" \
+                 --msgbox "Arquivo zshmap.yml (ou workerboss.yml legado) não encontrado para o projeto $project_name!" \
                  10 60
         return 1
     fi
@@ -1282,7 +1311,7 @@ generate_zprofile_auto() {
     cat > "$output_file" << 'EOF'
 # Arquivo .zprofile-auto gerado automaticamente pelo ZshMap
 # NÃO EDITE ESTE ARQUIVO MANUALMENTE - Ele será sobrescrito
-# Para modificar os atalhos, edite os arquivos workerboss.yml de cada projeto
+# Para modificar os atalhos, edite os ficheiros zshmap.yml na raiz de cada projeto
 
 # Funções auxiliares necessárias
 function verificar_apache2() {
@@ -1575,7 +1604,7 @@ EOF
     # Gerar atalhos para cada projeto encontrado
     local projects_found=0
     
-    # Buscar por arquivos workerboss.yml em subdiretórios
+    # Buscar zshmap.yml (ou workerboss.yml legado) por pasta de projeto
     while IFS= read -r -d '' yaml_path; do
         local project_name=$(basename "$(dirname "$yaml_path")")
         local project_root=$(dirname "$yaml_path")
@@ -1742,7 +1771,7 @@ EOF
     done < <(find_zshmap_project_yamls "$projects_dir")
     
     if [ $projects_found -eq 0 ]; then
-        echo "# Nenhum projeto com workerboss.yml encontrado em $projects_dir" >> "$output_file"
+        echo "# Nenhum projeto com zshmap.yml (ou workerboss.yml legado) encontrado em $projects_dir" >> "$output_file"
     fi
     
     # Extras pessoais (repositório/dotfiles aparte): após atalhos YAML; ordem = ordem no YAML (lista)
@@ -3309,7 +3338,7 @@ install:
 
 shell:
   extras_source:
-    - "~/Projects/substitui-pelo-repo/.workerboss-extras.zsh"
+    - "~/Projects/substitui-pelo-repo/.zshmap-extras.zsh"
 WBHOMEYAML
             then
                 whiptail --title "❌ Erro" \
@@ -3456,7 +3485,7 @@ main() {
                     fi
                     whiptail --title "❌ Geração bloqueada" \
                              --scrolltext \
-                             --msgbox "Foram encontrados atalhos duplicados entre projetos.\n\nO arquivo .zprofile-auto NÃO será gerado: cada nome de atalho precisa ser único entre todos os workerboss.yml.\n\nConsulte o terminal para a lista (nome do atalho e pastas de projeto)." \
+                             --msgbox "Foram encontrados atalhos duplicados entre projetos.\n\nO arquivo .zprofile-auto NÃO será gerado: cada nome de atalho precisa ser único entre todos os zshmap.yml dos projetos.\n\nConsulte o terminal para a lista (nome do atalho e pastas de projeto)." \
                              14 68
                 else
                     # Gerar .zprofile-auto com loader simples
@@ -3493,7 +3522,7 @@ main() {
                         exit 0
                     else
                         whiptail --title "❌ Erro" \
-                                 --msgbox "Erro ao gerar o arquivo .zprofile-auto!\n\nVerifique se os arquivos workerboss.yml estão corretos." \
+                                 --msgbox "Erro ao gerar o arquivo .zprofile-auto!\n\nVerifique se os ficheiros zshmap.yml dos projetos estão corretos." \
                                  10 60
                     fi
                 fi
@@ -3501,7 +3530,7 @@ main() {
             dup)
                 # Verificar atalhos duplicados (informativo)
                 whiptail --title "🔍 Verificação de atalhos duplicados" \
-                         --msgbox "Serão lidos os workerboss.yml dos projetos.\n\nA saída completa aparece no terminal (atrás desta janela ou na sessão onde o ZshMap foi iniciado).\n\nDepois de ler o resultado no terminal, pressione Enter lá para ver o resumo na próxima tela." \
+                         --msgbox "Serão lidos os zshmap.yml dos projetos (e workerboss.yml legado, se existir).\n\nA saída completa aparece no terminal (atrás desta janela ou na sessão onde o ZshMap foi iniciado).\n\nDepois de ler o resultado no terminal, pressione Enter lá para ver o resumo na próxima tela." \
                          14 62
                 
                 validate_duplicate_shortcuts
@@ -3816,7 +3845,7 @@ execute_dump() {
     # Obter o caminho do arquivo YAML do projeto
     local yaml_file=$(get_project_yaml_path "$project_name")
     if [ $? -ne 0 ] || [ -z "$yaml_file" ]; then
-        echo "❌ Arquivo workerboss.yml não encontrado para o projeto $project_name!"
+        echo "❌ Arquivo zshmap.yml (ou workerboss.yml legado) não encontrado para o projeto $project_name!"
         return 1
     fi
     
@@ -4064,7 +4093,7 @@ _zshmap_it_commands_lines_for_shortcut() {
     fi
     local st
     st=$(yq -r ".project.shortcuts[] | select(.name == \"$sc\") | .type" "$yaml_file" 2>/dev/null)
-    printf '      (sem .commands/.command fixos — type=%s; ver workerboss.yml)\n' "${st:-?}"
+    printf '      (sem .commands/.command fixos — type=%s; ver zshmap.yml)\n' "${st:-?}"
 }
 
 # Monta o comando final do wizard interactive-test a partir de command_line no YAML:
@@ -4357,7 +4386,7 @@ execute_interactive_test() {
         final_cmd=$(_zshmap_it_build_interactive_final_cmd "$yaml_file" "$shortcut_name" "$test_command_answer" "$testsuite_answer" "$filter_answer" "$no_coverage_answer") || wb_it_cmd_rc=$?
         if [ "$wb_it_cmd_rc" -ne 0 ] || [ -z "$final_cmd" ]; then
             _zshmap_it_whiptail_plain --title "❌ Configuração incompleta" \
-                --msgbox "Montagem do comando de testes não definida no workerboss.yml.
+                --msgbox "Montagem do comando de testes não definida no zshmap.yml.
 
 Defina project.test_config.command_line (padrão do projeto) ou test_config.command_line no atalho interactive-test (sobrescreve o do projeto).
 
@@ -4367,7 +4396,7 @@ Campos: include_testsuite, testsuite_flag, include_filter_if_non_empty, filter_f
         fi
         
         if [ -z "$app_container" ] || [ "$app_container" = "null" ]; then
-            echo "❌ Defina project.docker.containers.app no workerboss.yml (nome do container da aplicação)."
+            echo "❌ Defina project.docker.containers.app no zshmap.yml (nome do container da aplicação)."
             return 1
         fi
         
@@ -4383,7 +4412,7 @@ Campos: include_testsuite, testsuite_flag, include_filter_if_non_empty, filter_f
             if [ "$recreate_env_answer" = "0" ]; then
                 if [ -z "$setup_shortcut" ] || [ "$setup_shortcut" = "null" ]; then
                     _zshmap_it_whiptail_plain --title "❌ Configuração incompleta" \
-                        --msgbox "Você pediu para recriar o ambiente, mas project.test_config.setup_shortcut não está definido no workerboss.yml." \
+                        --msgbox "Você pediu para recriar o ambiente, mas project.test_config.setup_shortcut não está definido no zshmap.yml." \
                         12 70
                     return 1
                 fi
@@ -4504,7 +4533,7 @@ Campos: include_testsuite, testsuite_flag, include_filter_if_non_empty, filter_f
         # Executar recriação do ambiente se necessário (apenas uma vez)
         if [ "$recreate_env_answer" = "0" ] && [ "$environment_recreated" = false ]; then
             if [ -z "$setup_shortcut" ] || [ "$setup_shortcut" = "null" ]; then
-                echo "❌ Defina project.test_config.setup_shortcut no workerboss.yml (atalho que recria DB/migrations antes dos testes)."
+                echo "❌ Defina project.test_config.setup_shortcut no zshmap.yml (atalho que recria DB/migrations antes dos testes)."
                 return 1
             fi
             echo "🔄 Executando $setup_shortcut..."
@@ -4556,14 +4585,14 @@ Campos: include_testsuite, testsuite_flag, include_filter_if_non_empty, filter_f
     return 0
 }
 
-# Função legada: delega ao assistente «interactive-test» definido no workerboss.yml do projeto.
+# Função legada: delega ao assistente «interactive-test» definido no zshmap.yml do projeto.
 # Configure project.test_config.interactive_test_shortcut com o name de um shortcut type: interactive-test.
 execute_test() {
     local project_name="$1"
     local yaml_file
     yaml_file=$(get_project_yaml_path "$project_name")
     if [ $? -ne 0 ] || [ -z "$yaml_file" ]; then
-        echo "❌ Arquivo workerboss.yml não encontrado para o projeto $project_name!"
+        echo "❌ Arquivo zshmap.yml (ou workerboss.yml legado) não encontrado para o projeto $project_name!"
         return 1
     fi
     if ! validate_yaml_file "$yaml_file"; then
@@ -4573,7 +4602,7 @@ execute_test() {
     local shortcut_name
     shortcut_name=$(yq -r '.project.test_config.interactive_test_shortcut // ""' "$yaml_file" 2>/dev/null)
     if [ -z "$shortcut_name" ] || [ "$shortcut_name" = "null" ]; then
-        echo "❌ Defina project.test_config.interactive_test_shortcut no workerboss.yml do projeto \"$project_name\"."
+        echo "❌ Defina project.test_config.interactive_test_shortcut no zshmap.yml do projeto \"$project_name\"."
         echo "   Use o campo name de um shortcut com type: interactive-test (perguntas em test_config.questions desse atalho)."
         return 1
     fi
