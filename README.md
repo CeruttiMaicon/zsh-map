@@ -66,6 +66,29 @@ shell:
 
 4. No ZshMap: **Gerar .zprofile-auto**. Abre um terminal novo ou `source ~/.zprofile-auto`.
 
+## Exemplo de `zshmap.yml` na raiz do projeto
+
+Cada repositório sob `projects.dir` pode ter um **`zshmap.yml`** na raiz com **`project`** e a lista **`shortcuts`**. Cada atalho define pelo menos **`name`**, **`type`**, **`path`** (relativo à raiz do repo) e **`command`** ou a lista **`commands`**. Depois de gerares o `.zprofile-auto` e carregares no shell, chamas pelo **nome** do atalho (o script gera **funções Zsh** com esse nome).
+
+```yaml
+project:
+  name: "Meu projeto"
+  shortcuts:
+    - name: up
+      title: "Subir stack (Docker)"
+      type: test
+      path: "."
+      command: docker compose up -d
+
+    - name: test
+      title: "Testes Artisan"
+      type: test
+      path: "."
+      command: php artisan test
+```
+
+**Nota:** `type: test` cobre comandos “normais” no fluxo do script. Existem tipos especiais (`helper`, `parameterized`, `dump`, `interactive-test`) — vê a lógica em `zsh-map.sh` para casos avançados.
+
 ## Funcionalidades
 
 ### Instalação de programas
@@ -76,7 +99,7 @@ shell:
 - **Por projeto:** `zshmap.yml` na raiz do repo; `workerboss.yml` ainda é aceite se o novo nome ainda não existir.
 - **Global:** `~/.zshmap.yml` — `projects`, `install`, `shell.extras_source`.
 - **Whiptail como “assistente”:** as integrações de telas (menus, listas, caixas de mensagem) encaixam-se no fluxo de execução dos atalhos — escolhes o contexto no menu e segues as etapas até correr o que precisas, com menos erros e menos cópia de comandos.
-- **Aliases no Zsh:** ao gerares **`~/.zprofile-auto`** e o carregares no teu shell, os atalhos ficam também expostos como **aliases Zsh**, para invocares os mesmos fluxos (ou comandos gerados) direto na linha de comandos, além do menu Whiptail.
+- **Funções no Zsh:** ao gerares **`~/.zprofile-auto`** e o carregares no teu shell, cada atalho do YAML fica disponível como **função** com o mesmo nome, para invocares na linha de comandos além do menu Whiptail (o ficheiro gerado inclui também **aliases** fixos no cabeçalho, por exemplo para Git).
 
 ### Git, Zsh, sistema
 - Configuração Git local, dependências Zsh, informações do sistema (conforme opções do menu).
