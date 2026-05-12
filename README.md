@@ -81,6 +81,29 @@ Se o arquivo ainda não existir, ele criará para você.
 
 4. No ZshMap: **Gerar .zprofile-auto**. Abre um terminal novo ou `source ~/.zprofile-auto`.
 
+## Exemplo de `zshmap.yml` na raiz do projeto
+
+Cada repositório sob `projects.dir` pode ter um **`zshmap.yml`** na raiz com **`project`** e a lista **`shortcuts`**. Cada atalho define pelo menos **`name`**, **`type`**, **`path`** (relativo à raiz do repo) e **`command`** ou a lista **`commands`**. Depois de gerares o `.zprofile-auto` e carregares no shell, chamas pelo **nome** do atalho (o script gera **funções Zsh** com esse nome).
+
+```yaml
+project:
+  name: "Meu projeto"
+  shortcuts:
+    - name: up
+      title: "Subir stack (Docker)"
+      type: test
+      path: "."
+      command: docker compose up -d
+
+    - name: test
+      title: "Testes Artisan"
+      type: test
+      path: "."
+      command: php artisan test
+```
+
+**Nota:** `type: test` cobre comandos “normais” no fluxo do script. Existem tipos especiais (`helper`, `parameterized`, `dump`, `interactive-test`) — vê a lógica em `zsh-map.sh` para casos avançados.
+
 ## Funcionalidades
 
 ### Instalação de programas
@@ -252,7 +275,7 @@ Os atalhos também podem ser chamados diretamente no terminal, depois de executa
 - **Criação dinâmica por projeto:** cada repositório pode declarar atalhos no seu `zshmap.yml` (na raiz); o ZshMap descobre projetos a partir de `~/.zshmap.yml` e monta menus e ações em função do que está definido — não precisas de editar o script para cada novo projeto ou comando.
 - **Global:** `~/.zshmap.yml` — `projects`, `install`, `shell.extras_source`.
 - **Whiptail como “assistente”:** as integrações de telas (menus, listas, caixas de mensagem) encaixam-se no fluxo de execução dos atalhos — escolhes o contexto no menu e segues as etapas até correr o que precisas, com menos erros e menos cópia de comandos.
-- **Funções no Zsh:** ao gerares **`~/.zprofile-auto`** e o carregares no teu shell, cada atalho fica como **função** com o mesmo `name`. O ficheiro gerado inclui também **aliases** fixos no cabeçalho (por exemplo para Git).
+- **Funções no Zsh:** ao gerares **`~/.zprofile-auto`** e o carregares no teu shell, cada atalho do YAML fica disponível como **função** com o mesmo nome, para invocares na linha de comandos além do menu Whiptail (o ficheiro gerado inclui também **aliases** fixos no cabeçalho, por exemplo para Git).
 
 ### Git, Zsh, sistema
 - Configuração Git local, dependências Zsh, informações do sistema (conforme opções do menu).
