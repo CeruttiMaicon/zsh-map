@@ -3392,7 +3392,7 @@ show_main_menu() {
     if _zshmap_programs_has_any_sh; then
         entries+=("prog" "📦 Instalação de Programas")
     fi
-    entries+=("yaml" "⚡ Atalhos Dinâmicos (YAML)")
+    entries+=("yaml" "⚡ Atalhos Dinâmicos Projetos (YAML)")
     entries+=("zpa" "🔧 Gerar .zprofile-auto")
     entries+=("dup" "🔍 Validar Atalhos Duplicados")
     entries+=("cst" "🔧 Atalhos Customizados")
