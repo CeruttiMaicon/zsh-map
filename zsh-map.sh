@@ -4047,6 +4047,58 @@ _zshmap_it_whiptail_plain() {
     fi
 }
 
+# Restaura TTY e lê largura/altura atuais do terminal real (/dev/tty), com fallback opcional.
+_zshmap_it_resolve_terminal_dims() {
+    local fallback_cols="${1:-120}"
+    local fallback_lines="${2:-40}"
+    local cols="" lines=""
+    local tty_rows tty_cols
+
+    _zshmap_it_reset_host_tty
+
+    if [ -c /dev/tty ] && [ -r /dev/tty ]; then
+        read -r tty_rows tty_cols < <(stty size </dev/tty 2>/dev/null) || true
+        if [[ "$tty_cols" =~ ^[0-9]+$ ]] && [ "$tty_cols" -ge 40 ]; then
+            cols=$tty_cols
+        fi
+        if [[ "$tty_rows" =~ ^[0-9]+$ ]] && [ "$tty_rows" -ge 10 ]; then
+            lines=$tty_rows
+        fi
+    fi
+
+    if [ -z "$cols" ]; then
+        cols=$(tput cols 2>/dev/null)
+    fi
+    if [ -z "$lines" ]; then
+        lines=$(tput lines 2>/dev/null)
+    fi
+
+    if [ -z "$cols" ] || ! [[ "$cols" =~ ^[0-9]+$ ]] || [ "$cols" -lt 40 ]; then
+        if [ -n "${COLUMNS:-}" ] && [[ "${COLUMNS}" =~ ^[0-9]+$ ]] && [ "${COLUMNS}" -ge 40 ]; then
+            cols=$COLUMNS
+        else
+            cols=$fallback_cols
+        fi
+    fi
+
+    if [ -z "$lines" ] || ! [[ "$lines" =~ ^[0-9]+$ ]] || [ "$lines" -lt 10 ]; then
+        if [ -n "${LINES:-}" ] && [[ "${LINES}" =~ ^[0-9]+$ ]] && [ "${LINES}" -ge 10 ]; then
+            lines=$LINES
+        else
+            lines=$fallback_lines
+        fi
+    fi
+
+    printf '%s %s' "$cols" "$lines"
+}
+
+_zshmap_it_reset_host_tty() {
+    stty sane 2>/dev/null || true
+    if [ -c /dev/tty ] && [ -w /dev/tty ]; then
+        stty sane </dev/tty 2>/dev/null || true
+    fi
+}
+
 # Menu/input: padrão 3>&1 1>&2 2>&3 + stdin no TTY.
 _zshmap_it_whiptail_fancy() {
     if [ -c /dev/tty ] && [ -r /dev/tty ]; then
@@ -4176,6 +4228,16 @@ execute_interactive_test() {
     # Recriação de ambiente e execução dos testes no container vêm do YAML do projeto (não fixar Multiplier)
     local setup_shortcut=$(yq -r ".project.test_config.setup_shortcut" "$yaml_file" 2>/dev/null)
     local app_container=$(yq -r ".project.docker.containers.app" "$yaml_file" 2>/dev/null)
+    local yaml_terminal_cols=$(yq -r ".project.test_config.terminal_columns // \"\"" "$yaml_file" 2>/dev/null)
+    local yaml_terminal_lines=$(yq -r ".project.test_config.terminal_lines // \"\"" "$yaml_file" 2>/dev/null)
+    local wb_it_fallback_cols=120
+    local wb_it_fallback_lines=40
+    if [ -n "$yaml_terminal_cols" ] && [ "$yaml_terminal_cols" != "null" ] && [[ "$yaml_terminal_cols" =~ ^[0-9]+$ ]]; then
+        wb_it_fallback_cols=$yaml_terminal_cols
+    fi
+    if [ -n "$yaml_terminal_lines" ] && [ "$yaml_terminal_lines" != "null" ] && [[ "$yaml_terminal_lines" =~ ^[0-9]+$ ]]; then
+        wb_it_fallback_lines=$yaml_terminal_lines
+    fi
     
     # Obter perguntas do YAML
     local questions_count
@@ -4399,13 +4461,19 @@ Campos: include_testsuite, testsuite_flag, include_filter_if_non_empty, filter_f
             echo "❌ Defina project.docker.containers.app no zshmap.yml (nome do container da aplicação)."
             return 1
         fi
-        
-        local docker_cmd="docker exec -it -e TERM=xterm-256color -e FORCE_COLOR=1 -e COLUMNS=$(tput cols) -e LINES=$(tput lines) $app_container $final_cmd"
+
+        local run_dims run_cols run_lines
+        run_dims=$(_zshmap_it_resolve_terminal_dims "$wb_it_fallback_cols" "$wb_it_fallback_lines")
+        run_cols=$(echo "$run_dims" | awk '{print $1}')
+        run_lines=$(echo "$run_dims" | awk '{print $2}')
+
+        # Sem -t: evita PTY do Docker ignorar COLUMNS/LINES (layout quebra após whiptail na 2ª execução).
+        local docker_cmd="docker exec -i -e TERM=xterm-256color -e FORCE_COLOR=1 -e COLUMNS=${run_cols} -e LINES=${run_lines} $app_container $final_cmd"
         
         export TERM=xterm-256color
         export FORCE_COLOR=1
-        export COLUMNS=$(tput cols 2>/dev/null || echo 120)
-        export LINES=$(tput lines 2>/dev/null || echo 30)
+        export COLUMNS=$run_cols
+        export LINES=$run_lines
         
         # Relatório de execução (uma vez por sessão do wizard, antes do primeiro run real)
         if [ "$wb_it_preview_done" = false ]; then
@@ -4553,6 +4621,8 @@ Campos: include_testsuite, testsuite_flag, include_filter_if_non_empty, filter_f
         
         local exit_code=$?
         
+        _zshmap_it_reset_host_tty
+        
         echo "════════════════════════════════════════════════════════════════"
         if [ $exit_code -eq 0 ]; then
             echo "✅ Comando(s) executado(s) com sucesso!"
@@ -4566,11 +4636,16 @@ Campos: include_testsuite, testsuite_flag, include_filter_if_non_empty, filter_f
         if [ "$show_output" = "true" ]; then
             echo ""
             echo "Pressione Enter para continuar..."
-            read -r
+            if [ -c /dev/tty ] && [ -r /dev/tty ]; then
+                read -r _ </dev/tty
+            else
+                read -r _
+            fi
         fi
         
         # Perguntar se deseja executar novamente
         echo ""
+        _zshmap_it_reset_host_tty
         _zshmap_it_whiptail_plain --title "🔄 Repetir Execução" --yesno "Deseja executar o comando novamente?" 10 60
         local rep_rc=$?
         if [ "$rep_rc" -ne 0 ]; then
