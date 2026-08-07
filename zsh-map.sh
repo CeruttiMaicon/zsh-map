@@ -840,7 +840,8 @@ execute_shortcut() {
     local setup_shortcut=$(yq -r ".project.shortcuts[] | select(.name == \"$shortcut_name\") | .setup_shortcut" "$yaml_file" 2>/dev/null)
     if [ "$setup_shortcut" != "null" ] && [ -n "$setup_shortcut" ]; then
         echo "🔧 Executando comando de preparação: $setup_shortcut"
-        execute_shortcut "$project_name" "$setup_shortcut"
+        # Quiet: preparação (ex.: *-exec → start) não mostra o msgbox "Sucesso" no meio do fluxo
+        ZSHMAP_SKIP_SUCCESS_DIALOG=1 execute_shortcut "$project_name" "$setup_shortcut"
         if [ $? -ne 0 ]; then
             whiptail --title "❌ Erro" \
                      --msgbox "Falha ao executar comando de preparação: $setup_shortcut" \
@@ -963,6 +964,18 @@ execute_shortcut() {
     # Verificar se tem array de comandos ou comando único
     local commands_to_execute=""
     local is_interactive=false
+    local exit_code=0
+
+    # Comando único vindo do YAML quando execute_shortcut foi chamado só com projeto+nome
+    if [ -z "$shortcut_command" ] || [ "$shortcut_command" = "null" ]; then
+        shortcut_command=$(yq -r ".project.shortcuts[] | select(.name == \"$shortcut_name\") | .command // \"\"" "$yaml_file" 2>/dev/null)
+        [ "$shortcut_command" = "null" ] && shortcut_command=""
+    fi
+    if [ -z "$shortcut_path" ] || [ "$shortcut_path" = "null" ]; then
+        shortcut_path=$(yq -r ".project.shortcuts[] | select(.name == \"$shortcut_name\") | .path // \".\"" "$yaml_file" 2>/dev/null)
+        [ -z "$shortcut_path" ] || [ "$shortcut_path" = "null" ] && shortcut_path="."
+        full_path="$project_root/$shortcut_path"
+    fi
     
     # Verificar se é array de comandos (commands) ou comando único (command)
     if yq -e ".project.shortcuts[] | select(.name == \"$shortcut_name\") | .commands" "$yaml_file" >/dev/null 2>&1; then
@@ -1062,7 +1075,7 @@ execute_shortcut() {
             eval "$terminal_cmd"
             
             # Para comandos interativos, considerar como sucesso
-            local exit_code=0
+            exit_code=0
         else
             # Para comandos normais, mostrar barra de progresso apenas se não for para mostrar saída
             if [ "$show_output" != "true" ]; then
@@ -1099,7 +1112,7 @@ execute_shortcut() {
             cd "$full_path"
             
             # Executar cada comando sequencialmente
-            local exit_code=0
+            exit_code=0
             local cmd_count=0
             local total_cmds=${#commands_array[@]}
             
@@ -1160,6 +1173,7 @@ execute_shortcut() {
         
         # Verificar se é um comando interativo (contém docker exec -it)
         if echo "$commands_to_execute" | grep -q "docker exec -it"; then
+            is_interactive=true
             # Para comandos interativos, limpar tela e executar
             clear
             echo "⚡ Executando comando interativo: $shortcut_name"
@@ -1204,7 +1218,7 @@ execute_shortcut() {
             eval "$terminal_cmd"
             
             # Para comandos interativos, considerar como sucesso
-            local exit_code=0
+            exit_code=0
         else
             # Para comandos normais, mostrar barra de progresso
             {
@@ -1228,14 +1242,22 @@ execute_shortcut() {
             
             # Executar comando normal
             cd "$full_path" && eval "$commands_to_execute"
-            local exit_code=$?
+            exit_code=$?
         fi
     fi
     
+    # Sem msgbox de sucesso em: setup quiet, docker exec -it, ou atalhos *-exec
+    local skip_success_dialog=false
+    if [ "${ZSHMAP_SKIP_SUCCESS_DIALOG:-0}" = "1" ] || [ "$is_interactive" = true ] || [[ "$shortcut_name" == *-exec ]]; then
+        skip_success_dialog=true
+    fi
+
     if [ $exit_code -eq 0 ]; then
-        whiptail --title "✅ Sucesso" \
-                 --msgbox "Atalho '$shortcut_name' executado com sucesso!\n\nProjeto: $project_name\nDiretório: $full_path" \
-                 12 60
+        if [ "$skip_success_dialog" != true ]; then
+            whiptail --title "✅ Sucesso" \
+                     --msgbox "Atalho '$shortcut_name' executado com sucesso!\n\nProjeto: $project_name\nDiretório: $full_path" \
+                     12 60
+        fi
     else
         whiptail --title "❌ Erro" \
                  --msgbox "Erro ao executar o atalho '$shortcut_name'!\n\nCódigo de saída: $exit_code\n\nVerifique se os comandos estão corretos." \
@@ -1721,17 +1743,14 @@ EOF
                         echo "function $shortcut_name() {" >> "$output_file"
                         echo "    local __wb_prev_dir=\"\$PWD\"" >> "$output_file"
                         
-                        # Se tem setup_shortcut, executar primeiro
+                        # Se tem setup_shortcut, executar a função gerada (sem whiptail do execute_shortcut)
                         if [ "$setup_shortcut" != "null" ] && [ -n "$setup_shortcut" ]; then
                             echo "    # Executando setup_shortcut: $setup_shortcut" >> "$output_file"
-                            echo "    cd $zb_q" >> "$output_file"
-                            echo "    bash -c 'source ./zsh-map.sh --functions-only && execute_shortcut \"$project_name\" \"$setup_shortcut\"'" >> "$output_file"
-                            echo "    if [ \$? -ne 0 ]; then" >> "$output_file"
+                            echo "    if ! $setup_shortcut; then" >> "$output_file"
                             echo "        echo \"❌ Falha ao executar setup_shortcut: $setup_shortcut\"" >> "$output_file"
                             echo "        cd \"\$__wb_prev_dir\" >/dev/null 2>&1 || true" >> "$output_file"
                             echo "        return 1" >> "$output_file"
                             echo "    fi" >> "$output_file"
-                            echo "    echo \"✅ Setup shortcut '$setup_shortcut' executado com sucesso\"" >> "$output_file"
                         fi
                         
                         echo "    cd \"$full_path\"" >> "$output_file"
