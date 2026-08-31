@@ -4487,7 +4487,12 @@ Campos: include_testsuite, testsuite_flag, include_filter_if_non_empty, filter_f
         run_lines=$(echo "$run_dims" | awk '{print $2}')
 
         # Sem -t: evita PTY do Docker ignorar COLUMNS/LINES (layout quebra após whiptail na 2ª execução).
-        local docker_cmd="docker exec -i -e TERM=xterm-256color -e FORCE_COLOR=1 -e COLUMNS=${run_cols} -e LINES=${run_lines} $app_container $final_cmd"
+        # bash -c com $final_cmd escapado (printf %q): evita que $(...) embutido no comando
+        # (ex.: --processes=$(sh scripts/...)) seja expandido no host pelo `eval` mais abaixo —
+        # a expansão deve acontecer dentro do container, não no cwd do zsh-map.
+        local final_cmd_quoted
+        printf -v final_cmd_quoted '%q' "$final_cmd"
+        local docker_cmd="docker exec -i -e TERM=xterm-256color -e FORCE_COLOR=1 -e COLUMNS=${run_cols} -e LINES=${run_lines} $app_container bash -c $final_cmd_quoted"
         
         export TERM=xterm-256color
         export FORCE_COLOR=1
