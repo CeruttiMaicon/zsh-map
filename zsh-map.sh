@@ -943,14 +943,12 @@ execute_shortcut() {
         
         return $exit_code
     elif [ "$shortcut_type" = "dump" ]; then
-        # Comando de dump - usar função execute_dump
         local is_qa="false"
-        if [ "$shortcut_name" = "dump-qa" ]; then
+        if _zshmap_is_dump_qa_shortcut "$shortcut_name"; then
             is_qa="true"
         fi
-        
-        # Executar função execute_dump
-        execute_dump "$project_name" "" "$is_qa"
+
+        execute_dump "$project_name" "" "$is_qa" "$shortcut_name"
         return $?
     elif [ "$shortcut_type" = "interactive-test" ]; then
         # Comando de teste interativo - usar função execute_interactive_test
@@ -1155,7 +1153,9 @@ execute_shortcut() {
             done
             
             # Se show_output estiver ativo e execução foi bem-sucedida, pausar para o usuário
-            if [ "$show_output" = "true" ] && [ $exit_code -eq 0 ]; then
+            # (exceto em chamadas encadeadas, ex.: setup_shortcut antes dos testes, onde
+            # ZSHMAP_SKIP_SUCCESS_DIALOG=1 indica execução programática sem interação do usuário)
+            if [ "$show_output" = "true" ] && [ $exit_code -eq 0 ] && [ "${ZSHMAP_SKIP_SUCCESS_DIALOG:-0}" != "1" ]; then
                 echo ""
                 echo "════════════════════════════════════════════════════════════════"
                 echo "✅ Execução concluída com sucesso!"
@@ -1691,10 +1691,10 @@ EOF
                         echo "    local __wb_prev_dir=\"\$PWD\"" >> "$output_file"
                         echo "    # Comando de dump - usar interface gráfica" >> "$output_file"
                         echo "    cd $zb_q" >> "$output_file"
-                        if [ "$shortcut_name" = "dump-qa" ]; then
-                            echo "    bash -c 'source ./zsh-map.sh --functions-only && execute_dump \"$project_name\" \"\" \"true\"'" >> "$output_file"
+                        if _zshmap_is_dump_qa_shortcut "$shortcut_name"; then
+                            echo "    bash -c 'source ./zsh-map.sh --functions-only && execute_dump \"$project_name\" \"\" \"true\" \"$shortcut_name\"'" >> "$output_file"
                         else
-                            echo "    bash -c 'source ./zsh-map.sh --functions-only && execute_dump \"$project_name\" \"\" \"false\"'" >> "$output_file"
+                            echo "    bash -c 'source ./zsh-map.sh --functions-only && execute_dump \"$project_name\" \"\" \"false\" \"$shortcut_name\"'" >> "$output_file"
                         fi
                         echo "    local __wb_rc=\$?" >> "$output_file"
                         echo "    cd \"\$__wb_prev_dir\" >/dev/null 2>&1 || true" >> "$output_file"
@@ -3855,11 +3855,75 @@ collect_dump_parameters() {
 }
 
 
+# dump-qa e prefixos de projeto (ex.: marketinghub-dump-qa, volleytrack-dump-qa)
+_zshmap_is_dump_qa_shortcut() {
+    local name="$1"
+    [ "$name" = "dump-qa" ] && return 0
+    case "$name" in
+        *-dump-qa) return 0 ;;
+    esac
+    return 1
+}
+
+# Resolve o atalho type:dump no YAML. Aceita "dump"/"dump-qa" ou nomes prefixados.
+_zshmap_resolve_dump_shortcut_name() {
+    local yaml_file="$1"
+    local is_qa="$2"
+    local preferred="$3"
+    local found=""
+    local name=""
+    local fallback=""
+
+    if [ -n "$preferred" ] && [ "$preferred" != "null" ]; then
+        found=$(yq -r ".project.shortcuts[] | select(.name == \"$preferred\") | .name" "$yaml_file" 2>/dev/null | head -n 1)
+        if [ -n "$found" ] && [ "$found" != "null" ]; then
+            printf '%s' "$found"
+            return 0
+        fi
+    fi
+
+    while IFS= read -r name; do
+        if [ -z "$name" ] || [ "$name" = "null" ]; then
+            continue
+        fi
+        if [ "$is_qa" = "true" ]; then
+            if _zshmap_is_dump_qa_shortcut "$name"; then
+                if [ "$name" = "dump-qa" ]; then
+                    printf '%s' "$name"
+                    return 0
+                fi
+                fallback="$name"
+            fi
+        else
+            if _zshmap_is_dump_qa_shortcut "$name"; then
+                continue
+            fi
+            if [ "$name" = "dump" ]; then
+                printf '%s' "$name"
+                return 0
+            fi
+            case "$name" in
+                *-dump)
+                    fallback="$name"
+                    ;;
+            esac
+        fi
+    done < <(yq -r '.project.shortcuts[] | select(.type == "dump") | .name' "$yaml_file" 2>/dev/null)
+
+    if [ -n "$fallback" ]; then
+        printf '%s' "$fallback"
+        return 0
+    fi
+
+    return 1
+}
+
 # Função para executar dump de banco de dados
 execute_dump() {
     local project_name="$1"
     local tenant_name_from_cli="$2"
     local is_qa="$3"
+    local requested_shortcut="${4:-}"
     
     # Obter o caminho do arquivo YAML do projeto
     local yaml_file=$(get_project_yaml_path "$project_name")
@@ -3873,11 +3937,20 @@ execute_dump() {
         echo "❌ Arquivo de configuração não encontrado: $yaml_file"
         return 1
     fi
-    
-    # Determinar o nome do atalho baseado no tipo de dump
-    local shortcut_name="dump"
-    if [ "$is_qa" = "true" ]; then
-        shortcut_name="dump-qa"
+
+    if [ -n "$requested_shortcut" ]; then
+        if _zshmap_is_dump_qa_shortcut "$requested_shortcut"; then
+            is_qa="true"
+        else
+            is_qa="false"
+        fi
+    fi
+
+    local shortcut_name=""
+    shortcut_name=$(_zshmap_resolve_dump_shortcut_name "$yaml_file" "$is_qa" "$requested_shortcut")
+    if [ $? -ne 0 ] || [ -z "$shortcut_name" ]; then
+        echo "❌ Atalho de dump não encontrado no zshmap.yml (procure type: dump, ex.: dump ou *-dump)."
+        return 1
     fi
     
     # Verificar se já temos tenant_name global (para dump-qa reutilizar do dump)
@@ -3890,15 +3963,13 @@ execute_dump() {
         else
             # Se não tem cache, verificar se tem setup_shortcut para executar dump primeiro
             local setup_shortcut=$(yq -r ".project.shortcuts[] | select(.name == \"$shortcut_name\") | .setup_shortcut" "$yaml_file" 2>/dev/null)
-            if [ "$setup_shortcut" = "dump" ]; then
-                echo "🔄 Executando dump como preparação para dump-qa..."
-                # Executar o dump completo (com suas dependências) apenas uma vez
-                execute_shortcut "$project_name" "dump"
+            if [ -n "$setup_shortcut" ] && [ "$setup_shortcut" != "null" ]; then
+                echo "🔄 Executando $setup_shortcut como preparação para dump-qa..."
+                execute_shortcut "$project_name" "$setup_shortcut"
                 if [ $? -ne 0 ]; then
                     echo "❌ Falha na execução do dump como preparação"
                     return 1
                 fi
-                # Agora usar o cache que foi criado
                 if [ -n "$GLOBAL_TENANT_NAME" ]; then
                     tenant_name="$GLOBAL_TENANT_NAME"
                     echo "✅ Usando tenant_name do dump executado: $tenant_name"
@@ -3906,7 +3977,6 @@ execute_dump() {
                     echo "❌ dump-qa requer que o comando dump seja executado primeiro"
                     return 1
                 fi
-                echo "✅ Usando tenant_name do dump executado: $tenant_name"
             else
                 echo "❌ dump-qa requer que o comando dump seja executado primeiro"
                 return 1
@@ -3914,7 +3984,7 @@ execute_dump() {
         fi
     elif [ -z "$tenant_name_from_cli" ] || [ "$tenant_name_from_cli" = "" ]; then
         # Verificar se o atalho tem parâmetros configurados
-        local param_count=$(yq -r ".project.shortcuts[] | select(.name == "$shortcut_name") | .parameters | length" "$yaml_file" 2>/dev/null)
+        local param_count=$(yq -r ".project.shortcuts[] | select(.name == \"$shortcut_name\") | .parameters | length" "$yaml_file" 2>/dev/null)
         
         if [ -z "$param_count" ] || [ "$param_count" = "null" ] || [ "$param_count" = "0" ]; then
             # Se não tem parâmetros, usar tenant_name global se disponível
@@ -3995,6 +4065,11 @@ Nome do tenant:" 10 60 3>&1 1>&2 2>&3)
 $command"
         fi
     done <<< "$commands"
+
+    if [ -z "$(printf '%s' "$script_content" | tr -d '[:space:]')" ]; then
+        echo "❌ Nenhum comando encontrado no atalho '$shortcut_name' (type: dump) do zshmap.yml"
+        return 1
+    fi
     
     # Verificar se deve mostrar saída detalhada
     local show_output=$(yq -r ".project.shortcuts[] | select(.name == \"$shortcut_name\") | .show_output" "$yaml_file" 2>/dev/null)
@@ -4629,7 +4704,7 @@ Campos: include_testsuite, testsuite_flag, include_filter_if_non_empty, filter_f
                 return 1
             fi
             echo "🔄 Executando $setup_shortcut..."
-            execute_shortcut "$project_name" "$setup_shortcut"
+            ZSHMAP_SKIP_SUCCESS_DIALOG=1 execute_shortcut "$project_name" "$setup_shortcut"
             if [ $? -ne 0 ]; then
                 echo "❌ Falha ao recriar ambiente"
                 return 1
