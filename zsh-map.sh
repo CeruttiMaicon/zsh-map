@@ -1153,7 +1153,9 @@ execute_shortcut() {
             done
             
             # Se show_output estiver ativo e execução foi bem-sucedida, pausar para o usuário
-            if [ "$show_output" = "true" ] && [ $exit_code -eq 0 ]; then
+            # (exceto em chamadas encadeadas, ex.: setup_shortcut antes dos testes, onde
+            # ZSHMAP_SKIP_SUCCESS_DIALOG=1 indica execução programática sem interação do usuário)
+            if [ "$show_output" = "true" ] && [ $exit_code -eq 0 ] && [ "${ZSHMAP_SKIP_SUCCESS_DIALOG:-0}" != "1" ]; then
                 echo ""
                 echo "════════════════════════════════════════════════════════════════"
                 echo "✅ Execução concluída com sucesso!"
@@ -4702,7 +4704,7 @@ Campos: include_testsuite, testsuite_flag, include_filter_if_non_empty, filter_f
                 return 1
             fi
             echo "🔄 Executando $setup_shortcut..."
-            execute_shortcut "$project_name" "$setup_shortcut"
+            ZSHMAP_SKIP_SUCCESS_DIALOG=1 execute_shortcut "$project_name" "$setup_shortcut"
             if [ $? -ne 0 ]; then
                 echo "❌ Falha ao recriar ambiente"
                 return 1
