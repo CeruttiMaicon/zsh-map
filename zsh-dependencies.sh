@@ -27,11 +27,3 @@ else
     # Se a linha 'plugins=' não existir, adicione-a
     echo 'plugins=(git sudo zsh-autosuggestions zsh-syntax-highlighting)' >> "$ZSHRC"
 fi
-
-# Criando link simbolico
-ln -s ${PWD}/.zprofile ${HOME}/.zprofile ;
-
-# Adiciona a linha para incluir ~/.zprofile no ~/.zshrc, se ainda não estiver lá
-if ! grep -q 'source ~/.zprofile' "$ZSHRC"; then
-    echo 'source ~/.zprofile' >> "$ZSHRC"
-fi
