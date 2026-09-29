@@ -4716,9 +4716,24 @@ Campos: include_testsuite, testsuite_flag, include_filter_if_non_empty, filter_f
         echo "🧪 Executando: $final_cmd"
         echo "════════════════════════════════════════════════════════════════"
         
+        # Sem -t o Docker não repassa o Ctrl+C ao container: pest e workers ficariam órfãos lá dentro.
+        local previous_int_trap
+        previous_int_trap=$(trap -p INT)
+        local tests_interrupted=false
+        trap "tests_interrupted=true; echo; echo '🛑 Interrompendo testes no container $app_container...'; docker exec $app_container pkill -INT -f 'vendor/bin/(pest|phpunit)|pest/bin/worker.php' 2>/dev/null" INT
+
         eval "$docker_cmd"
-        
+
         local exit_code=$?
+        if [ "$tests_interrupted" = true ]; then
+            exit_code=130
+        fi
+
+        if [ -n "$previous_int_trap" ]; then
+            eval "$previous_int_trap"
+        else
+            trap - INT
+        fi
         
         _zshmap_it_reset_host_tty
         
