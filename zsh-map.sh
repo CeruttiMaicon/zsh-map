@@ -1075,36 +1075,16 @@ execute_shortcut() {
             # Para comandos interativos, considerar como sucesso
             exit_code=0
         else
-            # Para comandos normais, mostrar barra de progresso apenas se não for para mostrar saída
-            if [ "$show_output" != "true" ]; then
-                {
-                    echo "0"
-                    echo "Preparando execução..."
-                    sleep 0.2
-                    echo "25"
-                    echo "Navegando para o diretório..."
-                    sleep 0.2
-                    echo "50"
-                    echo "Executando comandos..."
-                    sleep 0.2
-                    echo "75"
-                    echo "Processando..."
-                    sleep 0.2
-                    echo "100"
-                    echo "Execução concluída!"
-                } | whiptail --title "⚡ Executando Atalho" \
-                             --gauge "Executando $shortcut_name..." \
-                             8 60 0
-                else
-                    # Limpar tela e mostrar que está executando
-                    clear
-                    echo "⚡ Executando atalho: $shortcut_name"
-                    echo "📁 Diretório: $full_path"
-                    echo "📊 Total de comandos: ${#commands_array[@]}"
-                    echo ""
-                    echo "════════════════════════════════════════════════════════════════"
-                    echo ""
-                fi
+            if [ "$show_output" = "true" ]; then
+                # Limpar tela e mostrar que está executando
+                clear
+                echo "⚡ Executando atalho: $shortcut_name"
+                echo "📁 Diretório: $full_path"
+                echo "📊 Total de comandos: ${#commands_array[@]}"
+                echo ""
+                echo "════════════════════════════════════════════════════════════════"
+                echo ""
+            fi
             
             # Navegar para o diretório do projeto
             cd "$full_path"
@@ -1220,26 +1200,6 @@ execute_shortcut() {
             # Para comandos interativos, considerar como sucesso
             exit_code=0
         else
-            # Para comandos normais, mostrar barra de progresso
-            {
-                echo "0"
-                echo "Preparando execução..."
-                sleep 0.2
-                echo "25"
-                echo "Navegando para o diretório..."
-                sleep 0.2
-                echo "50"
-                echo "Executando comando: $shortcut_command"
-                sleep 0.2
-                echo "75"
-                echo "Processando..."
-                sleep 0.2
-                echo "100"
-                echo "Execução concluída!"
-            } | whiptail --title "⚡ Executando Atalho" \
-                         --gauge "Executando $shortcut_name..." \
-                         8 60 0
-            
             # Executar comando normal
             cd "$full_path" && eval "$commands_to_execute"
             exit_code=$?
