@@ -3,4 +3,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends zsh git ca-cert
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY . .
-CMD ["zsh", "-lc", "echo TODO: entrypoint de testes"]
+CMD ["zsh", "-lc", "zsh --version && git --version && echo orca-ok"]
