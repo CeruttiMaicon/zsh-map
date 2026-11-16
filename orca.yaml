@@ -1,0 +1,7 @@
+# Orca worktree env + Docker (zsh-map).
+scripts:
+  setup: |
+    bash scripts/orca-setup.sh
+  archive: |
+    bash scripts/orca-setup.sh --teardown
+setupAgentStartupPolicy: wait-for-setup
