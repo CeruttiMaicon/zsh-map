@@ -1,14 +1,23 @@
 name: CI
+
 on:
+  pull_request:
   push:
     branches: [main, master, develop]
-  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  orca:
+    name: orca-setup selftest
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Build image
-        run: docker compose -f docker/compose.yml build
-      - name: Run tests (placeholder)
-        run: docker compose -f docker/compose.yml run --rm app zsh -lc 'echo TODO: testes das funções'
+      - name: Selftest orca-setup (compose por slot)
+        run: bash scripts/orca-selftest.sh
